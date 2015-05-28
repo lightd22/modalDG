@@ -28,24 +28,28 @@ ncfilename = strcat('spltMod2d_' ,whichTest{1}, '.nc');
 %% Read in data
 ntest = 1;
 meqn = 2;
-whichRes = res(2);
+whichRes = res(3);
 whichTest = tests{ntest};
 
-subDir = 'noadv/';
-whichMethods = [1];
+subDir = '';
+whichMethods = [1 2];
 ncfilename = strcat('spltMod2d_' ,whichTest, '.nc');
+
+reactiveTest    = 1;
+reactionCoeff   = 1.0;
+tfinal          = 5.0;
 
 for imethod=1:length(whichMethods)
     nmethod = whichMethods(imethod);
     methName = methods{nmethod};
     if(nmethod == 1)
-        methname = 'Unlimited (no adv)';
+        methname = 'Unlimited';
         nc = ['_modal/' subDir ncfilename];
         out = plot_2dadv(methname,whichTest,nc,whichRes,meqn);
         out.figLabel = 'a';
         out.pltStyle = 'k-';
     elseif(nmethod == 2)
-        methname = 'TMAR';
+        methname = 'TMAR (mod)';
         nc = ['_pdModal/trunc/' subDir ncfilename];
         out = plot_2dadv(methname,whichTest,nc,whichRes,meqn);
         out.figLabel = 'b';
@@ -65,30 +69,200 @@ for imethod=1:length(whichMethods)
     end
     meth.(methName) = out;
     
-    qTic = 0.*squeeze(meth.(methName).q1(1,:,:));
-    qTf = qTic;
+    % Generate exact solution data    
+    if(reactiveTest)
+        q1_ic = squeeze(meth.(methName).q1(1,:,:));
+        q2_ic = squeeze(meth.(methName).q2(1,:,:));
+        qTotal = q1_ic+q2_ic;
+        [q1_exact,q2_exact] = reactiveExact(reactionCoeff,q1_ic,qTotal,tfinal);
+        meth.(methName).q1_ex = q1_exact;
+        meth.(methName).q2_ex = q2_exact;        
+    else
+        for m=1:meqn
+            qname = ['q' num2str(m)];
+            qexname = [qname '_ex'];
+            meth.(methName).(qexname) = squeeze(meth.(methName).(qname)(1,:,:)); 
+        end
+    end
+
     for m=1:meqn
         error = [];
         einf = [];
 
-        qname = ['q' num2str(m)];
-        ic = squeeze(out.(qname)(1,:,:));
-        qTic = qTic+ic;
-        
+        qname = ['q' num2str(m)];        
         final = squeeze(out.(qname)(end,:,:));
-        qTf = qTf+final;
-        % Compute error            
-        nError = sqrt(mean( (ic(:)-final(:)).^2 ));
+        
+        qname = [qname '_ex'];
+        exact = meth.(methName).(qname);
+        
+        % Compute L2 and Linf error            
+        nError = sqrt(mean( (exact(:)-final(:)).^2 ));
         error = [error nError];
-        errName = [qname 'l2'];
+        errName = ['q' num2str(m) '_err_l2'];
         meth.(methName).(errName) = error;
 
-        nError = max(abs(ic(:)-final(:)));
-        errName = [qname 'inf'];
+        nError = max(abs(exact(:)-final(:)));
+        errName = ['q' num2str(m) '_err_inf'];
         einf = [einf nError];
         meth.(methName).(errName) = einf;
     end
 %}
+end
+%% Make colored figures
+FS = 'FontSize';
+label = 'abcdefghijklmnopqrstuvwxyz';
+xwidth = 400; ywidth = 400;
+
+nFigs = length(whichMethods);
+
+whichTime       = -1;
+meqn            = 2;
+printErrors     = 1;
+printExtrema    = 1;
+printLabel      = 1;
+makeExactFigs   = 0;
+
+numCol          = 1;
+numRows         = 1;
+
+outDir          = ['_figs/_' whichTest '/'];
+saveFigure      = 1;
+closeAfterPause = 0;
+
+
+for imethod=1:length(whichMethods)
+    
+    nmethod = whichMethods(imethod);
+    methName = methods{nmethod};
+    currMeth = meth.(methName);
+    
+    disp(['*** Plotting: ' methName 'output:' outDir]);
+
+    x = currMeth.x;
+    y = currMeth.y;
+
+    if(ntest == 1)
+        contAxis = [-0.5 2.0];contStep = 0.1; 
+        clvls = contAxis(1):contStep:contAxis(2); 
+        xloc1 = 0.55; xloc2 = xloc1;
+        yloc1 = 0.65; yloc2 = yloc1-0.3;
+    end
+    
+    nt = length(currMeth.t);
+    if(whichTime == -1)
+        nlvls = nt;
+    else
+        nlvls = whichTime;
+    end
+    nCol = length(nlvls); nRow = 1; numPlot = nCol*nRow;
+
+    for m=1:meqn
+        fig = figure();
+        set(gcf, 'PaperUnits', 'points');
+        set(gcf,'PaperPositionMode','auto','PaperSize',[xwidth ywidth]);
+        set(fig, 'Position', [0 0 xwidth ywidth]);
+        
+        qname = ['q' num2str(m)];        
+        e2name = [qname '_err_l2'];
+        einfname = [qname '_err_inf'];
+
+        err2 = sprintf('%#.3g',currMeth.(e2name));
+        einf = sprintf('%#.3g',currMeth.(einfname));
+        
+        if(makeExactFigs)
+            qname2 = [qname '_ex'];
+            final = squeeze(currMeth.(qname2)(:,:));
+        else
+            final = squeeze(currMeth.(qname)(nlvls,:,:));
+        end
+
+        final = final+10^(-15); % Adjust values below machine precision
+        % Plot data
+  
+        % Modify colormap
+        nColors = round((contAxis(2)-contAxis(1))/contStep);
+        negColorRange = sum(clvls<=0);
+        %negColorRange = 0;
+        cmap = colormap(jet(nColors-negColorRange));
+        LG = [0.0 0.0 0.0]; W = [1 1 1];
+        R = linspace(LG(1),W(1),negColorRange)'; G = linspace(LG(2),W(2),negColorRange)'; B = linspace(LG(3),W(3),negColorRange)';
+        %T = [R G B]; cmap(1:negColorRange,:) = T;
+        T = [R G B]; cmap = [T' cmap']';
+        colormap(cmap);
+        
+        [C,h]=contourf(x,y,final,clvls,'LineStyle','none');
+        axis([0 1 0 1]); caxis(contAxis);
+        
+        xlabel('x',FS,18); ylabel('y',FS,18); 
+        set(gca,'XTick',0:.2:1,'YTick',0:.2:1,'XTickLabel',[0:.2:1],'YTickLabel',[0:.2:1]);    
+    
+        if(printErrors == 1)
+            text(xloc1,yloc1,['E_2= ' err2],FS,18 );
+            text(xloc1,yloc1-.1,['E_{\infty}= ' einf],FS,18 );
+        end
+        if(printExtrema)
+            text(xloc2,yloc2,sprintf('Max_ = %4.3f', max(final(:))),FS,18 );
+            text(xloc2,yloc2-0.1,sprintf('Min_ = %4.3f', min(final(:))),FS,18 );
+        end
+        if(printLabel)
+            if(makeExactFigs)
+                hLu = text(0.05,0.95,[label(m) ') Exact --' qname],FS,18);
+            else
+                hLu = text(0.05,0.95,[label(m) ') ' currMeth.method '--' qname],FS,18);
+            end
+        end
+    
+        opos = get(gca,'OuterPosition');
+        pos = get(gca,'Position');
+
+        currLabel = label(m);
+        if( (numCol*numRows-(currLabel-'a')) > 2)
+            xtl = '';
+            set(gca,'XTickLabel',xtl,FS,8);
+            xlabel('');
+        end
+        if( mod(currLabel-'a',numCol) ~= 0)
+            ytl = ''; yaxlab = '';
+            set(gca,'YTickLabel',ytl,FS,8);
+            ylabel('');
+        end
+
+        set(gca,FS,16,'Position',pos,'OuterPosition',opos);
+        box on;
+        
+        pow = str2double(whichRes);
+        nelem = length(squeeze(currMeth.q1(1,:,:)))/(currMeth.N+1);
+        name = [subDir '_' methName '/_color/' whichTest '_N', num2str(currMeth.N), 'E', num2str(nelem), '_' qname];
+        if(makeExactFigs) 
+            name = [name '_EXACT'];
+        end
+        name = [outDir name '.pdf'];
+
+        if(saveFigure == 1)
+            print(fig,'-dpdf',name);
+        end
+    end
+
+end
+
+% Print colorbar figure
+fig = figure(); axis off;
+set(gcf, 'PaperUnits', 'points');
+set(gcf,'PaperPositionMode','auto','PaperSize',[2*xwidth ywidth]);
+set(fig, 'Position', [0 0 2*xwidth ywidth])
+colormap(cmap);
+h = colorbar('location','southoutside',FS,18); caxis(contAxis);
+%set(h,'XTick',contAxis(1):0.2:contAxis(2),'XTickLabel',contAxis(1):0.2:contAxis(2));
+
+name = [subDir '_' methName '/_color/' whichTest '_N', num2str(currMeth.N), 'E', num2str(nelem),'_CB.pdf'];
+name = [outDir name];
+if(saveFigure == 1)
+    print(fig,'-dpdf',name);
+end
+
+pause(5.0);
+if(closeAfterPause)
+    close all
 end
 %% Make Comparison Figure for this resolution
 FS = 'FontSize';
@@ -132,8 +306,8 @@ for imethod=1:length(whichMethods)
         set(fig, 'Position', [0 0 xwidth ywidth])
 
         qname = ['q' num2str(m)];
-        e2name = [qname 'l2'];
-        einfname = [qname 'inf'];
+        e2name = [qname '_err_l2'];
+        einfname = [qname '_err_inf'];
 
         ics = squeeze(currMeth.(qname)(1,:,:));
         final = squeeze(currMeth.(qname)(end,:,:));
@@ -148,7 +322,7 @@ for imethod=1:length(whichMethods)
         set (h, 'LineWidth', 1,'LineColor','k');
 
         negclvls = -1*[1 1]*10^(-14);
-        [C,h] = contour(x,y,final,negclvls,'LineWidth',1.0,'LineColor',[0.75 0.75 0.75]);
+        [C,h] = contour(x,y,final,negclvls,'LineWidth',2.0,'LineColor',[0.75 0.75 0.75]);
         %set(h,'LineWidth', 0.2,'LineColor',[0.95 0.95 0.95]);
 
         if(plotICs)
@@ -214,7 +388,7 @@ FS = 'FontSize'; LW = 'LineWidth';
 
 ySlicePos   = 0.25;
 meqn        = 2;
-saveFigure  = 0;
+saveFigure  = 1;
 outDir = '_figs/_';
 
 
@@ -266,132 +440,8 @@ for imethod=1:length(whichMethods)
     pause(0.5);
 
 end
-%% Make colored comparison plots
-FS = 'FontSize';
-figLabels = 'abcdefghijklmnopqrstuvwxyz';
-currPlot = 0;
-nFigs = length(whichMethods);
 
-whichTime       = 31;
-outDir          = ['_figs/_' whichTest];
-saveFigure      = 0;
-print_extrema   = 1;
-for imethod=1:length(whichMethods)
-    
-    nmethod = whichMethods(imethod);
-    methName = methods{nmethod};
-    currMeth = meth.(methName);
 
-    if(ntest == 1)
-        clvls = -1.0:0.1:2.0; contAxis = [-1.0 2.0];
-    end
-    
-    nt = length(currMeth.t);
-    nlvls = [nt];
-    nCol = length(nlvls); nRow = 1; numPlot = nCol*nRow;
-
-    lSpc = 0.12;bSpc = 0.25;pSpc = 0.02;
-    subPlotWidth = 400; subPlotHeight = 400;
-    xwidth = nCol*subPlotWidth; ywidth = 1.3*nRow*subPlotHeight;
-    
-    fig = figure();
-    set(gcf, 'PaperUnits', 'points');
-    set(gcf,'PaperPositionMode','auto','PaperSize',[xwidth ywidth]);
-    set(fig, 'Position', [0 0 xwidth ywidth])
-    
-    r = xwidth/ywidth;
-    colW = (1-lSpc-(nCol)*pSpc)/nCol; 
-    scl = (1-bSpc); rowH = colW*r;  
-    colX = lSpc + linspace(0,nCol*(colW+pSpc),nCol+1); colX = colX(1:end-1);
-    rowY = bSpc + linspace(0,nRow*(rowH+pSpc),nRow+1); rowY = rowY(1:end-1);
-    for dId = 1:numPlot
-
-        % -- Read data to be plotted from currMeth
-        currPlot = currPlot+1;
-        pltName = figLabels(currPlot);
-        data.vals = currMeth.q1(whichTime,:,:);
-        data.x = currMeth.x;
-        data.y = currMeth.y;
-        data.subfigLabel = currMeth.figLabel;
-
-        rowId = ceil( dId / nCol ) ;
-        colId = dId - (rowId - 1) * nCol ;
-        axes( 'Position', [colX(colId), rowY(rowId), colW, rowH] ) ;
-        
-        tmp = squeeze(data.vals);
-        %contourf(data.x,data.y,tmp,clvls,'LineWidth',0.15); axis([0 1 0 1]); caxis(contAxis);
-        contourf(data.x,data.y,tmp,clvls,'LineStyle','none'); axis([0 1 0 1]); caxis(contAxis);
-        xlabel('x',FS,18); ylabel('y',FS,18);
-        set(gca,'XTick',0:.2:1,'YTick',0:.2:1,'XTickLabel',[0:.2:1],'YTickLabel',[0:.2:1]);
-        set(gca,'Position',[colX(colId), rowY(rowId), colW, rowH]);
-        
-        if(print_extrema == 1)
-            ftitle = [data.subfigLabel,')  ','t=',num2str(currMeth.t(whichTime),'%2.2f'),', Max:',num2str(max(tmp(:)),'%6.4f'),', Min:',num2str(min(tmp(:)),'%6.4f')];
-            title(ftitle,FS,18,'Position', [0.06 1], 'HorizontalAlignment', 'left');
-        end
-        
-        opos = get(gca,'OuterPosition');
-        pos = get(gca,'Position');
-    
-        currLabel = data.subfigLabel;
-       
-        if( (pltName-'a') < (nCol*nFigs-2))
-            xtl = '';
-            set(gca,'XTickLabel',xtl,FS,8);
-            xlabel('');
-        end
-        if( mod(pltName-'a',2) ~= 0)
-            ytl = ''; yaxlab = '';
-            set(gca,'YTickLabel',ytl,FS,8);
-            ylabel('');
-        end
-        
-        set(gca,FS,12,'Position',pos,'OuterPosition',opos);
-        box on;       
-        %{
-        if( colId == nCol && (pltName-'a') >= (nCol*nFigs-2))
-            pos = get(gca,'Position');
-            opos = get(gca,'OuterPosition');
-            h = colorbar('location','southoutside',FS,18); caxis(contAxis);
-            set(h,'XTick',contAxis(1):.2:contAxis(2),'XTickLabel',contAxis(1):.2:contAxis(2));
-            set(gca,'Position',pos,'OuterPosition',opos);            
-            buffer = 0.05;
-            set(h,'Position',[colX(1)+buffer/2,0.1,nCol*colW-buffer,0.05]);            
-        end
-        %}
-        
-    end
-    pow = str2double(whichRes);
-    nelem = length(squeeze(currMeth.q1(1,:,:)))/(currMeth.N+1);
-    name = [whichTest, '_2d', num2str(nelem),'e_',methName,'.pdf'];
-    name = [outDir name];
-    
-    if(saveFigure == 1)
-        print(fig,'-dpdf',name);
-    end
-
-end
-
-% Print colorbar figure
-fig = figure();
-set(gcf, 'PaperUnits', 'points');
-set(gcf,'PaperPositionMode','auto','PaperSize',[2*xwidth ywidth]);
-set(fig, 'Position', [0 0 2*xwidth ywidth]);
-axes( 'Position', [colX(colId), rowY(rowId), colW, rowH] ) ; axis off;
-
-pos = get(gca,'Position'); opos = get(gca,'OuterPosition');
-h = colorbar('location','southoutside',FS,18); caxis(contAxis);
-set(h,'XTick',contAxis(1):.2:contAxis(2),'XTickLabel',contAxis(1):.2:contAxis(2));
-set(gca,'Position',pos,'OuterPosition',opos); buffer = 0.05;
-%set(h,'Position',[colX(1)+buffer/2,0.1,nCol*colW-buffer/2,0.05]);   
-set(h,'Position',[colX(1)+pSpc,0.1,nCol*colW-lSpc,0.05]);   
-
-name = [whichTest, '_2d', num2str(nelem),'e_CB.pdf'];
-name = [outDir name];
-
-if(saveFigure == 1)
-    print(fig,'-dpdf',name);
-end
 %% For reactive flows, plot change in 2*q1+q2 (should be constant)
 xwidth = 400; 
 ywidth = 400;
@@ -599,6 +649,18 @@ yloc = round(ny*ySlicePos);
 q1_init = squeeze(meth.modal.q1(1,:,yloc));
 q2_init = squeeze(meth.modal.q2(1,:,yloc));
 [q1f,q2f] = reactiveExact(1.0,q1_init,1.0,5.0);
-subplot(211), plot(x,q1_init,'g.',x,q1f,'m-',LW,2),axis([0 1 -0.5 1.4]);
-subplot(212), plot(x,q2_init,'g.',x,q2f,'m-',LW,2),axis([0 1 -0.5 1.4]);
 
+fig = figure();
+set(gcf, 'PaperUnits', 'points');
+set(gcf,'PaperPositionMode','auto','PaperSize',[xwidth ywidth]);
+set(fig, 'Position', [0 0 xwidth ywidth]);
+
+subplot(211), plot(x,q1_init,'g.',x,q1f,'m-',LW,2),axis([0 1 -0.5 1.4]);
+ylabel('q(x,y*)',FS,14);
+hLu = text(0.05,1.25,['a) Exact -- q1'],FS,18); 
+subplot(212), plot(x,q2_init,'g.',x,q2f,'m-',LW,2),axis([0 1 -0.5 1.4]);
+ylabel('q(x,y*)',FS,14),xlabel('x',FS,14);
+hLu = text(0.05,1.25,['b) Exact -- q2'],FS,18); 
+
+name = '_figs/_def_cosinebell/noadv/exact_N4E24.pdf';
+print(fig,name,'-dpdf');

@@ -67,8 +67,7 @@ SUBROUTINE qinit(xVals,yVals,nx,ny,q,reactiveCoeffs)
       WHERE(r .lt. 1D0)
           q(:,:,2) = 0.25D0*(1D0+DCOS(PI*r))**2
       END WHERE
-      !q(:,:,2) = q(:,:,1)
-      q(:,:,1) = 1D0-q(:,:,2)
+      q(:,:,1) = 1D0
 
     CASE(7) ! Slotted cylinder in deformation flow
         x0 = 0.25D0

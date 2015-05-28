@@ -153,7 +153,7 @@ SUBROUTINE DRIVER(nex0,ney0,nscale,nruns,noutput,maxCFL)
   xDomain(2) = 1D0
   yDomain = xDomain
 
-  nmethod_final = 3
+  nmethod_final = 2
   tmp_method = 0
   tmp_method(1) = 1 ! Split modal DG, no limiting
   tmp_method(2) = 2 ! Split modal DG, TMAR limiting for positivity
