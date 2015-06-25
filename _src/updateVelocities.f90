@@ -24,11 +24,17 @@ SUBROUTINE updateVelocities(u,v,uEdge,vEdge,time)
     END FUNCTION tfcn
   END INTERFACE
 
-  timeFactor = tfcn(time)
+  ! Update time-dependent flows
+  IF(transient) THEN
+    timeFactor = tfcn(time)
+    u = u*timeFactor
+    v = v*timeFactor
+    uEdge = uEdge*timeFactor
+    vEdge = vEdge*timeFactor
+  ENDIF
 
-  u = u*timeFactor
-  v = v*timeFactor
-  uEdge = uEdge*timeFactor
-  vEdge = vEdge*timeFactor
+  ! Add background mean flow
+  u = u + uMean
+  v = v + vMean
 
 END SUBROUTINE updateVelocities

@@ -6,13 +6,14 @@ clear all;
 close all;
 clc;
 %%
-cd('/Users/Devin/Desktop/R/ModalDG/2d_adv/terminatorTest');
+cd('/Users/Devin/Desktop/R/ModalDG/2d_adv/advReaction');
 
 tests = {
          'def_cosinebell', ... % 1, LeVeque deformation test cosinebell                          
          'def_cyl',... % 2, Deformation flow applied to slotted cylinder
          'consistency',... %3 uniform field deformation flow
          'reactive',... % 4 Reactive half plane flow
+         'sbr' % 5 Solid body rotation
          };
 res = {'1','2','3','4'};
 methods = { 'modal',...
@@ -21,17 +22,14 @@ methods = { 'modal',...
             'modalPDs',...
           };
 
-whichTest = tests(1);
-whichRes = res(2);
-
-ncfilename = strcat('spltMod2d_' ,whichTest{1}, '.nc');
-%% Read in data
-ntest = 1;
+% Read in data
+ntest = 5;
 meqn = 2;
-whichRes = res(3);
+whichRes = res(1);
 whichTest = tests{ntest};
 
-subDir = '';
+%subDir = 'n5/';
+subDir ='/';
 whichMethods = [1 2];
 ncfilename = strcat('spltMod2d_' ,whichTest, '.nc');
 
@@ -50,7 +48,7 @@ for imethod=1:length(whichMethods)
         out.pltStyle = 'k-';
     elseif(nmethod == 2)
         methname = 'TMAR (mod)';
-        nc = ['_pdModal/trunc/' subDir ncfilename];
+        nc = ['_pdModal/tmar/' subDir ncfilename];
         out = plot_2dadv(methname,whichTest,nc,whichRes,meqn);
         out.figLabel = 'b';
         out.pltStyle = 'r--';
@@ -70,21 +68,20 @@ for imethod=1:length(whichMethods)
     meth.(methName) = out;
     
     % Generate exact solution data    
-    if(reactiveTest)
-        q1_ic = squeeze(meth.(methName).q1(1,:,:));
-        q2_ic = squeeze(meth.(methName).q2(1,:,:));
-        qTotal = q1_ic+q2_ic;
-        [q1_exact,q2_exact] = reactiveExact(reactionCoeff,q1_ic,qTotal,tfinal);
-        meth.(methName).q1_ex = q1_exact;
-        meth.(methName).q2_ex = q2_exact;        
-    else
-        for m=1:meqn
-            qname = ['q' num2str(m)];
-            qexname = [qname '_ex'];
-            meth.(methName).(qexname) = squeeze(meth.(methName).(qname)(1,:,:)); 
-        end
+    data = squeeze(meth.(methName).q1(1,:,:));
+    q_ic = zeros([size(data) meqn]);
+    for m=1:meqn
+        qname = ['q' num2str(m)];
+        q_ic(:,:,m) = squeeze(meth.(methName).(qname)(1,:,:));
     end
-
+    
+    if(reactiveTest)                
+        qEx = reactiveExact(reactionCoeff,q_ic,tfinal);
+        meth.(methName).q_ex = qEx;
+    else
+        meth.(methName).q_ex = q_ic;
+    end
+    
     for m=1:meqn
         error = [];
         einf = [];
@@ -92,8 +89,7 @@ for imethod=1:length(whichMethods)
         qname = ['q' num2str(m)];        
         final = squeeze(out.(qname)(end,:,:));
         
-        qname = [qname '_ex'];
-        exact = meth.(methName).(qname);
+        exact = squeeze(meth.(methName).q_ex(:,:,m));
         
         % Compute L2 and Linf error            
         nError = sqrt(mean( (exact(:)-final(:)).^2 ));
@@ -116,7 +112,6 @@ xwidth = 400; ywidth = 400;
 nFigs = length(whichMethods);
 
 whichTime       = -1;
-meqn            = 2;
 printErrors     = 1;
 printExtrema    = 1;
 printLabel      = 1;
@@ -127,7 +122,7 @@ numRows         = 1;
 
 outDir          = ['_figs/_' whichTest '/'];
 saveFigure      = 1;
-closeAfterPause = 0;
+closeAfterPause = 1;
 
 
 for imethod=1:length(whichMethods)
@@ -157,10 +152,17 @@ for imethod=1:length(whichMethods)
     nCol = length(nlvls); nRow = 1; numPlot = nCol*nRow;
 
     for m=1:meqn
+        if(m==1)
+            xpos = 0;
+            ypos = (imethod-1)*300;
+        else
+            xpos = 400;
+            ypos = (imethod-1)*300;
+        end
         fig = figure();
         set(gcf, 'PaperUnits', 'points');
         set(gcf,'PaperPositionMode','auto','PaperSize',[xwidth ywidth]);
-        set(fig, 'Position', [0 0 xwidth ywidth]);
+        set(fig, 'Position', [xpos ypos xwidth ywidth]);
         
         qname = ['q' num2str(m)];        
         e2name = [qname '_err_l2'];
@@ -170,8 +172,7 @@ for imethod=1:length(whichMethods)
         einf = sprintf('%#.3g',currMeth.(einfname));
         
         if(makeExactFigs)
-            qname2 = [qname '_ex'];
-            final = squeeze(currMeth.(qname2)(:,:));
+            final = squeeze(currMeth.q_ex(:,:,m));
         else
             final = squeeze(currMeth.(qname)(nlvls,:,:));
         end
@@ -196,7 +197,7 @@ for imethod=1:length(whichMethods)
         xlabel('x',FS,18); ylabel('y',FS,18); 
         set(gca,'XTick',0:.2:1,'YTick',0:.2:1,'XTickLabel',[0:.2:1],'YTickLabel',[0:.2:1]);    
     
-        if(printErrors == 1)
+        if(printErrors == 1 && makeExactFigs == 0)
             text(xloc1,yloc1,['E_2= ' err2],FS,18 );
             text(xloc1,yloc1-.1,['E_{\infty}= ' einf],FS,18 );
         end
@@ -232,7 +233,7 @@ for imethod=1:length(whichMethods)
         
         pow = str2double(whichRes);
         nelem = length(squeeze(currMeth.q1(1,:,:)))/(currMeth.N+1);
-        name = [subDir '_' methName '/_color/' whichTest '_N', num2str(currMeth.N), 'E', num2str(nelem), '_' qname];
+        name = ['_' methName '/_color/' subDir whichTest '_N', num2str(currMeth.N), 'E', num2str(nelem), '_' qname];
         if(makeExactFigs) 
             name = [name '_EXACT'];
         end
@@ -242,39 +243,37 @@ for imethod=1:length(whichMethods)
             print(fig,'-dpdf',name);
         end
     end
+    
+    % Print colorbar figure
+    fig = figure(); axis off;
+    set(gcf, 'PaperUnits', 'points');
+    set(gcf,'PaperPositionMode','auto','PaperSize',[2*xwidth ywidth]);
+    set(fig, 'Position', [800 0 2*xwidth ywidth])
+    colormap(cmap);
+    h = colorbar('location','southoutside',FS,18); caxis(contAxis);
 
+    name = ['_' methName '/_color/' subDir whichTest '_N', num2str(currMeth.N), 'E', num2str(nelem),'_CB.pdf'];
+    name = [outDir name];
+    if(saveFigure == 1)
+        print(fig,'-dpdf',name);
+    end
 end
 
-% Print colorbar figure
-fig = figure(); axis off;
-set(gcf, 'PaperUnits', 'points');
-set(gcf,'PaperPositionMode','auto','PaperSize',[2*xwidth ywidth]);
-set(fig, 'Position', [0 0 2*xwidth ywidth])
-colormap(cmap);
-h = colorbar('location','southoutside',FS,18); caxis(contAxis);
-%set(h,'XTick',contAxis(1):0.2:contAxis(2),'XTickLabel',contAxis(1):0.2:contAxis(2));
-
-name = [subDir '_' methName '/_color/' whichTest '_N', num2str(currMeth.N), 'E', num2str(nelem),'_CB.pdf'];
-name = [outDir name];
-if(saveFigure == 1)
-    print(fig,'-dpdf',name);
-end
-
-pause(5.0);
+pause(3.0);
 if(closeAfterPause)
     close all
 end
 %% Make Comparison Figure for this resolution
 FS = 'FontSize';
-cd('/Users/Devin/Desktop/R/ModalDG/2d_adv/terminatorTest/');
+cd('/Users/Devin/Desktop/R/ModalDG/2d_adv/advReaction/');
 close all
 
 print_errors    = 1;
 print_label     = 1;
-plotICs         = 0;
+plotICs         = 1;
 numRows         = 1;
 figsPerRow      = 1;
-saveFigure      = 0;
+saveFigure      = 1;
 
 xwidth = 400; 
 ywidth = 400;
@@ -369,7 +368,7 @@ for imethod=1:length(whichMethods)
 
         pow = str2double(whichRes);
         nelem = length(ics)/(currMeth.N+1);
-        name = [methName '/' subDir methName '_2d',qname, num2str(nelem),'e','.pdf'];
+        name = [subDir methName '_2d',qname, '_',num2str(nelem),'e','.pdf'];
         name = [outDir name];
 
         if(saveFigure == 1)

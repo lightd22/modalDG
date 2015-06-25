@@ -101,36 +101,27 @@ SUBROUTINE strangSplit(q,u0,v0,uEdge0,vEdge0,quadNodes,quadWeights,time,&
     END INTERFACE
 
     ! Update velocities at times required for ssprk3 update
-    IF(transient) THEN
-      DO i=1,3
-        utmp = u0
-        vtmp = v0
-        uEdgetmp = uEdge0
-        vEdgetmp = vEdge0
-        SELECT CASE(i)
-          CASE(1)
-            t_temp = time
-          CASE(2)
-            t_temp = time+dt
-          CASE(3)
-            t_temp = time+0.5D0*dt
-        END SELECT
+    DO i=1,3
+      utmp = u0
+      vtmp = v0
+      uEdgetmp = uEdge0
+      vEdgetmp = vEdge0
+      SELECT CASE(i)
+        CASE(1)
+          t_temp = time
+        CASE(2)
+          t_temp = time+dt
+        CASE(3)
+          t_temp = time+0.5D0*dt
+      END SELECT
 
-        CALL updateVelocities(utmp,vtmp,uEdgetmp,vEdgetmp,t_temp)
+      CALL updateVelocities(utmp,vtmp,uEdgetmp,vEdgetmp,t_temp)
 
-        u(i,:,:) = utmp
-        v(i,:,:) = vtmp
-        uEdge(i,:,:) = uEdgetmp
-        vEdge(i,:,:) = vEdgetmp
-      ENDDO !i
-    ELSE
-      DO i=1,3
-        u(i,:,:) = u0
-        v(i,:,:) = v0
-        uEdge(i,:,:) = uEdge0
-        vEdge(i,:,:) = vEdge0
-      ENDDO !i
-    ENDIF !transient
+      u(i,:,:) = utmp
+      v(i,:,:) = vtmp
+      uEdge(i,:,:) = uEdgetmp
+      vEdge(i,:,:) = vEdgetmp
+    ENDDO !i
     IF(oddstep) THEN
         ! ===================================
         ! Perform sweeps in x-direction first

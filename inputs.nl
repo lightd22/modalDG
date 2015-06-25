@@ -20,11 +20,15 @@
                         ! 5 = LeVeque deformation of C^3 cosinebell
                         ! 6 = LeVeque deformation of C^5 cosinebell
                         ! 7 = LeVeque deformation of slotted cylinder
+                        ! 8 = Solid body rotation of C^3 cosinebell
 
     tfinal = 5D0        ! Final time of integration
 
+    uMean  = 1D0        ! Mean Flow in Horizontal
+    vMean  = 0D0        ! Mean Flow in Vertical
+
     TRANSIENT = .TRUE.  ! Time-dependent flow
-    DOREACTIVE = .TRUE. ! Reactive flow
+    DOREACTIVE = .FALSE. ! Reactive flow
 
     ! Misc parameters
     DEBUG = .FALSE.

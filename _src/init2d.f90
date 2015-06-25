@@ -108,6 +108,24 @@ SUBROUTINE init2d(q,u,v,uEdge,vEdge,xPlot,yPlot,quadNodes,dxel,dyel,&
         psivEdge(i,:,0) = (SIN(PI*xtilde(i,0))**2 * SIN(PI*(elemCenterY(:)+0.5D0*dyel))**2)/PI
         psivEdge(i,:,1) = (SIN(PI*xtilde(i,1))**2 * SIN(PI*(elemCenterY(:)+0.5D0*dyel))**2)/PI
       ENDDO!i
+
+    CASE(8) ! Solid body rotation
+      ! Evaluate stream function for horizontal velocities
+      DO j=1,nyOut
+        psiu(:,j,0) = PI*( (DGx(:)-0.5D0)**2+(ytilde(j,0)-0.5D0)**2)
+        psiu(:,j,1) = PI*( (DGx(:)-0.5D0)**2+(ytilde(j,1)-0.5D0)**2)
+        psiuEdge(:,j,0) = PI*( (elemCenterX(:)+0.5D0*dxel-0.5D0)**2 + (ytilde(j,0)-0.5D0)**2)
+        psiuEdge(:,j,1) = PI*( (elemCenterX(:)+0.5D0*dxel-0.5D0)**2 + (ytilde(j,1)-0.5D0)**2)
+      ENDDO!j
+
+      ! Evaluate stream function for vertical velocities
+      DO i=1,nxOut
+        psiv(i,:,0) = PI*((xtilde(i,0)-0.5D0)**2+(DGy(:)-0.5D0)**2)
+        psiv(i,:,1) = PI*((xtilde(i,1)-0.5D0)**2+(DGy(:)-0.5D0)**2)
+        psivEdge(i,:,0) = PI*((xtilde(i,0)-0.5D0)**2+(elemCenterY(:)+0.5D0*dyel-0.5D0)**2)
+        psivEdge(i,:,0) = PI*((xtilde(i,1)-0.5D0)**2+(elemCenterY(:)+0.5D0*dyel-0.5D0)**2)
+      ENDDO!i
+
   END SELECT !testID
 
   ! Compute u velocities from stream function
@@ -121,5 +139,5 @@ SUBROUTINE init2d(q,u,v,uEdge,vEdge,xPlot,yPlot,quadNodes,dxel,dyel,&
     v(i,:) = -1D0*(psiv(i,:,1)-psiv(i,:,0))/dxPlot
     vEdge(i,:) = -1D0*(psivEdge(i,:,1)-psivEdge(i,:,0))/dxPlot
   ENDDO!i
-  
+
 END SUBROUTINE init2d

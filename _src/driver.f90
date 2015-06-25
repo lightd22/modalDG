@@ -172,6 +172,8 @@ SUBROUTINE DRIVER(nex0,ney0,nscale,nruns,noutput,maxCFL)
         cdfOut = 'spltMod2d_def_cosinebell'
       CASE(7)
         cdfOut = 'spltMod2d_def_cyl'
+      CASE(8)
+        cdfOut = 'spltMod2d_sbr'
     END SELECT !testID
     imethod = tmp_method(nmethod)
 
@@ -180,21 +182,25 @@ SUBROUTINE DRIVER(nex0,ney0,nscale,nruns,noutput,maxCFL)
       CASE(1)
         write(*,*) 'DG, averages, no limiting'
         doposlimit = .false.
+!        write(outdir,'(A,I1,A)') '_modal/n',maxPolyDegree,'/'
         outdir = '_modal/'
       CASE(2)
         write(*,*) 'DG, averages, TMAR limiting'
         doposlimit = .true.
         limitingType = 1
-        outdir = '_pdModal/trunc/'
+!        write(outdir,'(A,I1,A)') '_pdModal/tmar/n',maxPolyDegree,'/'
+        outdir = '_pdModal/tmar/'
       CASE(3)
         write(*,*) 'DG, averages, subcell rescaling'
         doposlimit = .true.
         limitingType = 2
+        !write(outdir,'(A,I1,A)') '_pdModal/rescale/n',maxPolyDegree,'/'
         outdir = '_pdModal/rescale/'
       CASE(4)
         WRITE(*,*) 'DG, averages, equal subscale rescaling'
         doposlimit = .true.
         limitingType = 3
+        !write(outdir,'(A,I1,A)') '_pdModal/eqscale/n',maxPolyDegree,'/'
         outdir = '_pdModal/eqscale/'
 
     END SELECT !imethod
@@ -279,7 +285,6 @@ SUBROUTINE DRIVER(nex0,ney0,nscale,nruns,noutput,maxCFL)
         CALL output2d(q,xPlot,yPlot,tfinal,calculatedMu,cdfOut,nout,-1)
       ENDIF
       CALL output2d(q,xPlot,yPlot,tfinal,calculatedMu,cdfOut,p,0)
-
       ! =====================================================================================================
       ! Time integration
       ! =====================================================================================================
@@ -297,6 +302,7 @@ SUBROUTINE DRIVER(nex0,ney0,nscale,nruns,noutput,maxCFL)
                                dt,dxel,dyel,reactiveCoeffs,oddstep)
 
         time = time + dt
+
         ! Check if this is output time
         IF((MOD(n,nstep/nout).eq.0).OR.(n.eq.nstep)) THEN ! Write output variables
           write(*,*) 'Outputting at time =',time

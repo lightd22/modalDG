@@ -26,7 +26,7 @@ PROGRAM EXECUTE
     END INTERFACE
 
     NAMELIST /inputs/ startRes,nRuns,nScale,maxPolyDegree,cflCoeff,noutput,meqn, &
-                      testID,tfinal,TRANSIENT,DOREACTIVE,DEBUG
+                      testID,tfinal,uMean,vMean,TRANSIENT,DOREACTIVE,DEBUG
     inUnit=20
     OPEN(unit=inUnit,file="inputs.nl",action="read")
     READ(inUnit,NML=inputs)
@@ -40,6 +40,7 @@ PROGRAM EXECUTE
     write(*,*) '             BEGINNING RUN OF MODAL TESTS             '
     write(*,'(A27,F7.4)') 'muMAX=',muMAX
     write(*,'(A13,L5)') 'TRANSIENT =',transient
+    write(*,'(A13,L5)') 'REACTIVE  =',doreactive
     write(*,'(A10,I5)') 'meqn = ',meqn
     write(*,*) '======================================================'
 
