@@ -26,11 +26,10 @@ SUBROUTINE DRIVER(nex0,ney0,nscale,nruns,noutput,maxCFL)
   REAL(KIND=4), DIMENSION(1:nRuns) :: t0,tf
   LOGICAL :: oddstep
   DOUBLE PRECISION :: dxel,dyel,dxPlot,dyPlot,tmp_umax,tmp_vmax,calculatedMu,dt,time
-  DOUBLE PRECISION, ALLOCATABLE, DIMENSION(:) :: quadNodes,quadWeights,elemCenterX,elemCenterY,&
+  DOUBLE PRECISION, ALLOCATABLE, DIMENSION(:) :: quadNodes,quadWeights,elemX,elemY,&
       xPlot,yPlot,DGx,DGy,FOO
-  DOUBLE PRECISION, ALLOCATABLE, DIMENSION(:,:) :: u0,v0,uEdge0,vEdge0,&
-                                  avgXferOp,avgXferOpLU,legendreVal,legendreDeriv
-  DOUBLE PRECISION, ALLOCATABLE, DIMENSION(:,:,:) :: q,q0,reactiveCoeffs
+  DOUBLE PRECISION, ALLOCATABLE, DIMENSION(:,:) :: u0,v0,uEdge0,vEdge0,avgXferOp,avgXferOpLU,legendreVal,legendreDeriv
+  DOUBLE PRECISION, ALLOCATABLE, DIMENSION(:,:,:) :: q,q0,u,v,uEdge,vEdge,reactiveCoeffs
   INTEGER, ALLOCATABLE, DIMENSION(:) :: IPIV
 
   ! =================================================================================
@@ -38,7 +37,7 @@ SUBROUTINE DRIVER(nex0,ney0,nscale,nruns,noutput,maxCFL)
   ! =================================================================================
 
   INTERFACE
-    SUBROUTINE init2d(q,u,v,uEdge,vEdge,xPlot,yPlot,quadNodes,dxel,dyel,&
+    SUBROUTINE init2d(q,u,v,uEdge,vEdge,xPlot,yPlot,DGx,DGy,quadNodes,dxel,dyel,&
                       dxPlot,dyPlot,elemCenterX,elemCenterY,reactiveCoeffs)
       ! ==============================================================================
       ! Computes initial conditions for q,u,v fields
@@ -50,11 +49,12 @@ SUBROUTINE DRIVER(nex0,ney0,nscale,nruns,noutput,maxCFL)
       ! OUTPUTS: q(i,j,neq) - initial conditions evaluated for neqth field
       !          u(i,j),v(i,j) - velocities evaluated at quadrature locations
       !          uEdge,vEdge - velocities at edges of each element
+      !          reactiveCoeffs - reaction coefficients at x(i),y(j)
       ! ==============================================================================
       USE commonTestParameters
       IMPLICIT NONE
       ! Inputs
-      DOUBLE PRECISION, INTENT(IN) :: dxel,dyel,dxPlot,dyPlot
+      DOUBLE PRECISION, INTENT(IN) :: dxel, dyel,dxPlot,dyPlot
       DOUBLE PRECISION, DIMENSION(0:nQuad), INTENT(IN) :: quadNodes
       DOUBLE PRECISION, DIMENSION(1:nxOut), INTENT(IN) :: xPlot
       DOUBLE PRECISION, DIMENSION(1:nyOut), INTENT(IN) :: yPlot
@@ -65,6 +65,8 @@ SUBROUTINE DRIVER(nex0,ney0,nscale,nruns,noutput,maxCFL)
       DOUBLE PRECISION, DIMENSION(1:nxOut,1:nyOut) :: u,v
       DOUBLE PRECISION, DIMENSION(1:nex,1:nyOut), INTENT(OUT) :: uEdge
       DOUBLE PRECISION, DIMENSION(1:nxOut,1:ney), INTENT(OUT) :: vEdge
+      DOUBLE PRECISION, DIMENSION(1:nxOut), INTENT(OUT) :: DGx
+      DOUBLE PRECISION, DIMENSION(1:nyOut), INTENT(OUT) :: DGy
     END SUBROUTINE init2d
 
     SUBROUTINE output2d(q,xOut,yOut,timeOut,muOut,cdfOut,ilvl,stat)
@@ -88,8 +90,27 @@ SUBROUTINE DRIVER(nex0,ney0,nscale,nruns,noutput,maxCFL)
       ! Outputs
     END SUBROUTINE output2d
 
-    SUBROUTINE strangSplit(q,u0,v0,uEdge0,vEdge0,quadNodes,quadWeights,time,&
-                           legendreVal,legendreDeriv,avgXferOp,avgXferOpLU,IPIV,&
+    SUBROUTINE updateVelocities(uOut,vOut,uEdge,vEdge,xOut,elemEdgeX,DGx,yOut,elemEdgeY,DGy,time,dt)
+      ! =========================================================
+      ! Updates horizontal and vertical velocities
+      ! at necessary grid points to time levels required by integrator
+      ! =========================================================
+      USE commonTestParameters
+      IMPLICIT NONE
+      ! Inputs
+      DOUBLE PRECISION, INTENT(IN) :: time,dt
+      DOUBLE PRECISION, DIMENSION(1:nxOut), INTENT(IN) :: xOut,DGx
+      DOUBLE PRECISION, DIMENSION(1:nyOut), INTENT(IN) :: yOut,DGy
+      DOUBLE PRECISION, DIMENSION(1:nex), INTENT(IN) :: elemEdgeX
+      DOUBLE PRECISION, DIMENSION(1:ney), INTENT(IN) :: elemEdgeY
+      ! Outputs
+      DOUBLE PRECISION, DIMENSION(1:3,1:nxOut,1:nyOut), INTENT(INOUT) :: uOut,vOut
+      DOUBLE PRECISION, DIMENSION(1:3,1:nex,1:nyOut), INTENT(INOUT) :: uEdge
+      DOUBLE PRECISION, DIMENSION(1:3,1:nxOut,1:ney), INTENT(INOUT) :: vEdge
+    END SUBROUTINE updateVelocities
+
+    SUBROUTINE strangSplit(q,u,v,uEdge,vEdge,quadNodes,quadWeights,time,&
+                           legendreVal,legendreDeriv,avgOP,avgOP_LU,IPIV,&
                            dt,dxel,dyel,reactiveCoeffs,oddstep)
     ! =====================================================================================================
     ! strangSplitUpdate is responsible for selecting which slice of subcell volumes is sent to mDGsweep for update to time
@@ -102,17 +123,18 @@ SUBROUTINE DRIVER(nex0,ney0,nscale,nruns,noutput,maxCFL)
         USE commonTestParameters
         IMPLICIT NONE
         ! Inputs
-        REAL(KIND=8), INTENT(IN) :: dt,dxel,dyel,time
-        REAL(KIND=8), DIMENSION(1:nxOut,1:nyOut), INTENT(IN) :: u0,v0
-        REAL(KIND=8), DIMENSION(1:nex,1:nyOut), INTENT(IN) :: uEdge0
-        REAL(KIND=8), DIMENSION(1:nxOut,1:ney), INTENT(IN) :: vEdge0
-        REAL(KIND=8), DIMENSION(0:nQuad), INTENT(IN) :: quadNodes,quadWeights
-        REAL(KIND=8), DIMENSION(0:maxPolyDegree,0:nQuad), INTENT(IN) :: legendreVal,legendreDeriv,avgXferOp,avgXferOpLU
+        DOUBLE PRECISION, INTENT(IN) :: dt,dxel,dyel,time
+        DOUBLE PRECISION, DIMENSION(1:3,1:nxOut,1:nyOut), INTENT(IN) :: u,v
+        DOUBLE PRECISION, DIMENSION(1:3,1:nex,1:nyOut), INTENT(IN) :: uEdge
+        DOUBLE PRECISION, DIMENSION(1:3,1:nxOut,1:ney), INTENT(IN) :: vEdge
+        DOUBLE PRECISION, DIMENSION(0:nQuad), INTENT(IN) :: quadNodes,quadWeights
+        DOUBLE PRECISION, DIMENSION(0:maxPolyDegree,0:nQuad), INTENT(IN) :: legendreVal,legendreDeriv
+        DOUBLE PRECISION, DIMENSION(0:maxPolyDegree,0:maxPolyDegree),INTENT(IN) :: avgOP,avgOp_LU
         DOUBLE PRECISION, DIMENSION(1:nxOut,1:nyOut,1:meqn), INTENT(IN) :: reactiveCoeffs
         INTEGER, DIMENSION(0:maxPolyDegree), INTENT(IN) :: IPIV
         LOGICAL, INTENT(IN) :: oddstep
         ! Outputs
-        REAL(KIND=8), DIMENSION(1:nxOut,1:nyOut,1:meqn), INTENT(INOUT) :: q
+        DOUBLE PRECISION, DIMENSION(1:nxOut,1:nyOut,1:meqn), INTENT(INOUT) :: q
       END SUBROUTINE strangSplit
 
       SUBROUTINE computeErrors(qOut,q0,e1,e2,ei,cons,qMax,qMin,tf,nRuns,nex0,ney0,nscale,stat)
@@ -170,6 +192,8 @@ SUBROUTINE DRIVER(nex0,ney0,nscale,nruns,noutput,maxCFL)
         cdfOut = 'spltMod2d_reactive'
       CASE(5)
         cdfOut = 'spltMod2d_def_cosinebell'
+      CASE(6)
+        cdfOut = 'spltMod2d_smth_cosbell'
       CASE(7)
         cdfOut = 'spltMod2d_def_cyl'
       CASE(8)
@@ -182,26 +206,26 @@ SUBROUTINE DRIVER(nex0,ney0,nscale,nruns,noutput,maxCFL)
       CASE(1)
         write(*,*) 'DG, averages, no limiting'
         doposlimit = .false.
-!        write(outdir,'(A,I1,A)') '_modal/n',maxPolyDegree,'/'
-        outdir = '_modal/'
+        write(outdir,'(A,I1,A)') '_modal/n',maxPolyDegree,'/'
+!        outdir = '_modal/'
       CASE(2)
         write(*,*) 'DG, averages, TMAR limiting'
         doposlimit = .true.
         limitingType = 1
-!        write(outdir,'(A,I1,A)') '_pdModal/tmar/n',maxPolyDegree,'/'
-        outdir = '_pdModal/tmar/'
+        write(outdir,'(A,I1,A)') '_pdModal/tmar/n',maxPolyDegree,'/'
+!        outdir = '_pdModal/tmar/'
       CASE(3)
         write(*,*) 'DG, averages, subcell rescaling'
         doposlimit = .true.
         limitingType = 2
-        !write(outdir,'(A,I1,A)') '_pdModal/rescale/n',maxPolyDegree,'/'
-        outdir = '_pdModal/rescale/'
+        write(outdir,'(A,I1,A)') '_pdModal/rescale/n',maxPolyDegree,'/'
+!        outdir = '_pdModal/rescale/'
       CASE(4)
         WRITE(*,*) 'DG, averages, equal subscale rescaling'
         doposlimit = .true.
         limitingType = 3
-        !write(outdir,'(A,I1,A)') '_pdModal/eqscale/n',maxPolyDegree,'/'
-        outdir = '_pdModal/eqscale/'
+        write(outdir,'(A,I1,A)') '_pdModal/eqscale/n',maxPolyDegree,'/'
+!        outdir = '_pdModal/eqscale/'
 
     END SELECT !imethod
 
@@ -233,16 +257,20 @@ SUBROUTINE DRIVER(nex0,ney0,nscale,nruns,noutput,maxCFL)
       nxOut = nex*(nQuad+1) ! Number of local subcells for plotting final solution
       nyOut = ney*(nQuad+1)
 
-      ALLOCATE(elemCenterX(1:nex),elemCenterY(1:ney),xPlot(1:nxOut),yPlot(1:nyOut),&
-              DGx(1:nxOut),DGy(1:nyOut),q(1:nxOut,1:nyOut,1:meqn),q0(1:nxOut,1:nyOut,1:meqn),&
+      ALLOCATE(elemX(1:nex),elemY(1:ney),&
+              xPlot(1:nxOut),yPlot(1:nyOut),DGx(1:nxOut),DGy(1:nyOut),&
+              q(1:nxOut,1:nyOut,1:meqn),q0(1:nxOut,1:nyOut,1:meqn),&
               reactiveCoeffs(1:nxOut,1:nyOut,1:meqn), u0(1:nxOut,1:nyOut),v0(1:nxOut,1:nyOut),&
-              uEdge0(1:nex,1:nyOut),vEdge0(1:nxOut,1:ney),STAT=ierr)
+              uEdge0(1:nex,1:nyOut),vEdge0(1:nxOut,1:ney),&
+              u(1:3,1:nxOut,1:nyOut), v(1:3,1:nxOut,1:nyOut),uEdge(1:3,1:nex,1:nyOut),&
+              vEdge(1:3,1:nxOut,1:ney),&
+              STAT=ierr)
 
       ALLOCATE(avgXferOp(0:maxPolyDegree,0:maxPolyDegree),avgXferOpLU(0:maxPolyDegree,0:maxPolyDegree),&
                IPIV(0:maxPolyDegree),FOO(0:maxPolyDegree),STAT=ierr)
 
       ! Create plotting grids
-      CALL makeGrid(dxel,dyel,elemCenterX,elemCenterY,dxPlot,dyPlot,xPlot,yPlot)
+      CALL makeGrid(dxel,dyel,elemX,elemY,dxPlot,dyPlot,xPlot,yPlot)
 
       ! =====================================================================================================
       ! Fill in operator used to transfer between subcell averages on plotting grid and DG modal coeffs
@@ -256,9 +284,19 @@ SUBROUTINE DRIVER(nex0,ney0,nscale,nruns,noutput,maxCFL)
       ! =====================================================================================================
       ! Initialize q, u, and v arrays.
       ! =====================================================================================================
-      CALL init2d(q0,u0,v0,uEdge0,vEdge0,xPlot,yPlot,quadNodes,dxel,dyel,&
-                  dxPlot,dyPlot,elemCenterX,elemCenterY,reactiveCoeffs)
+      CALL init2d(q0,u0,v0,uEdge0,vEdge0,xPlot,yPlot,DGx,DGy,quadNodes,dxel,dyel,&
+                  dxPlot,dyPlot,elemX,elemY,reactiveCoeffs)
+      DO i=1,3
+        u(i,:,:) = u0
+        v(i,:,:) = v0
+        uEdge(i,:,:) = uEdge0
+        vEdge(i,:,:) = vEdge0
+      ENDDO
       q = q0
+
+      ! elemX and elemY are coordinates of element edges
+      elemX = elemX+0.5D0*dxel
+      elemY = elemY+0.5D0*dyel
 
       ! =====================================================================================================
       ! Set up time step size
@@ -285,6 +323,7 @@ SUBROUTINE DRIVER(nex0,ney0,nscale,nruns,noutput,maxCFL)
         CALL output2d(q,xPlot,yPlot,tfinal,calculatedMu,cdfOut,nout,-1)
       ENDIF
       CALL output2d(q,xPlot,yPlot,tfinal,calculatedMu,cdfOut,p,0)
+
       ! =====================================================================================================
       ! Time integration
       ! =====================================================================================================
@@ -296,8 +335,13 @@ SUBROUTINE DRIVER(nex0,ney0,nscale,nruns,noutput,maxCFL)
       oddstep = .TRUE.
       write(*,*) 'Beginning time step...'
       DO n=1,nstep
+        ! Update transient velocities
+        IF(transient) THEN
+          CALL updateVelocities(u,v,uEdge,vEdge,xPlot,elemX,DGx,yPlot,elemY,DGy,time,dt)
+        ENDIF
+
         ! Call update
-        CALL strangSplit(q,u0,v0,uEdge0,vEdge0,quadNodes,quadWeights,time,&
+        CALL strangSplit(q,u,v,uEdge,vEdge,quadNodes,quadWeights,time,&
                                legendreVal,legendreDeriv,avgXferOp,avgXferOpLU,IPIV,&
                                dt,dxel,dyel,reactiveCoeffs,oddstep)
 
@@ -326,8 +370,9 @@ SUBROUTINE DRIVER(nex0,ney0,nscale,nruns,noutput,maxCFL)
         CALL computeErrors(q,q0,e1,e2,ei,cons,tmpqMax,tmpqMin,tf,nRuns,nex0,ney0,nscale,-1)
       ENDIF
 
-      DEALLOCATE(elemCenterX,elemCenterY,xPlot,yPlot,DGx,DGy,avgXferOp,avgXferOpLU,IPIV,FOO,&
-                q,q0,reactiveCoeffs,u0,v0,uEdge0,vEdge0,STAT=ierr)
+      DEALLOCATE(elemX,elemY,xPlot,yPlot,DGx,DGy,u,v,uEdge,vEdge,&
+                avgXferOp,avgXferOpLU,IPIV,FOO,q,q0,reactiveCoeffs,&
+                u0,v0,uEdge0,vEdge0,STAT=ierr)
     ENDDO !p
 
     DEALLOCATE(quadNodes,quadWeights,legendreVal,legendreDeriv,STAT=ierr)

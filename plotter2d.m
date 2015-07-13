@@ -13,7 +13,8 @@ tests = {
          'def_cyl',... % 2, Deformation flow applied to slotted cylinder
          'consistency',... %3 uniform field deformation flow
          'reactive',... % 4 Reactive half plane flow
-         'sbr' % 5 Solid body rotation
+         'sbr',... % 5 Solid body rotation
+         'smth_cosbell' % 6 Deformation of a smoother cosine bell
          };
 res = {'1','2','3','4'};
 methods = { 'modal',...
@@ -23,17 +24,17 @@ methods = { 'modal',...
           };
 
 % Read in data
-ntest = 5;
-meqn = 2;
-whichRes = res(1);
+ntest = 1;
+meqn = 1;
+whichRes = res(2);
 whichTest = tests{ntest};
 
-%subDir = 'n5/';
-subDir ='/';
+subDir = 'n3/';
+%subDir ='';
 whichMethods = [1 2];
 ncfilename = strcat('spltMod2d_' ,whichTest, '.nc');
 
-reactiveTest    = 1;
+reactiveTest    = 0;
 reactionCoeff   = 1.0;
 tfinal          = 5.0;
 
@@ -41,7 +42,7 @@ for imethod=1:length(whichMethods)
     nmethod = whichMethods(imethod);
     methName = methods{nmethod};
     if(nmethod == 1)
-        methname = 'Unlimited';
+        methname = 'Unlimited (mod)';
         nc = ['_modal/' subDir ncfilename];
         out = plot_2dadv(methname,whichTest,nc,whichRes,meqn);
         out.figLabel = 'a';
@@ -50,7 +51,7 @@ for imethod=1:length(whichMethods)
         methname = 'TMAR (mod)';
         nc = ['_pdModal/tmar/' subDir ncfilename];
         out = plot_2dadv(methname,whichTest,nc,whichRes,meqn);
-        out.figLabel = 'b';
+        out.figLabel = 'a';
         out.pltStyle = 'r--';
     elseif(nmethod == 3)
         methname = 'ZS';
@@ -137,7 +138,7 @@ for imethod=1:length(whichMethods)
     y = currMeth.y;
 
     if(ntest == 1)
-        contAxis = [-0.5 2.0];contStep = 0.1; 
+        contAxis = [-0.5 1.0];contStep = 0.1; 
         clvls = contAxis(1):contStep:contAxis(2); 
         xloc1 = 0.55; xloc2 = xloc1;
         yloc1 = 0.65; yloc2 = yloc1-0.3;
@@ -209,7 +210,8 @@ for imethod=1:length(whichMethods)
             if(makeExactFigs)
                 hLu = text(0.05,0.95,[label(m) ') Exact --' qname],FS,18);
             else
-                hLu = text(0.05,0.95,[label(m) ') ' currMeth.method '--' qname],FS,18);
+                %hLu = text(0.05,0.95,[label(m) ') ' currMeth.method '--' qname],FS,18);
+                hLu = text(0.05,0.95,[currMeth.figLabel ') ' currMeth.method '--' qname],FS,18);
             end
         end
     

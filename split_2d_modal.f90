@@ -26,14 +26,13 @@ PROGRAM EXECUTE
     END INTERFACE
 
     NAMELIST /inputs/ startRes,nRuns,nScale,maxPolyDegree,cflCoeff,noutput,meqn, &
-                      testID,tfinal,uMean,vMean,TRANSIENT,DOREACTIVE,DEBUG
+                      testID,tfinal,TRANSIENT,DOREACTIVE,DEBUG,uMean,vMean
     inUnit=20
     OPEN(unit=inUnit,file="inputs.nl",action="read")
     READ(inUnit,NML=inputs)
 
     doposlimit = .FALSE.
 
-    write(*,*) meqn
     muMAX  = determineCFL(maxPolyDegree,cflCoeff)
 
     write(*,*) '======================================================'
@@ -41,7 +40,8 @@ PROGRAM EXECUTE
     write(*,'(A27,F7.4)') 'muMAX=',muMAX
     write(*,'(A13,L5)') 'TRANSIENT =',transient
     write(*,'(A13,L5)') 'REACTIVE  =',doreactive
-    write(*,'(A10,I5)') 'meqn = ',meqn
+    write(*,'(A9,I5)') 'meqn = ',meqn
+    write(*,'(A20,2F7.4)') 'mean flow (U,V) = ',uMean,vMean
     write(*,*) '======================================================'
 
     write(*,*) '======'
@@ -58,6 +58,9 @@ PROGRAM EXECUTE
         	write(*,*) 'TEST 6: LeVeque Smoother Cosbell Deformation Test'
         CASE(7)
         	write(*,*) 'TEST 7: Slotted Cylinder Deformation Test'
+        CASE DEFAULT
+          write(*,*) ' ******** WARNING:: TEST NOT AVAILABLE *******'
+          STOP
     END SELECT
   write(*,*) 'WARNING: Only periodic BCs are implemented'
 	write(*,*) '======'

@@ -65,11 +65,19 @@ SUBROUTINE qinit(xVals,yVals,nx,ny,q,reactiveCoeffs)
           r(:,j) = 4D0*SQRT( (xVals-0.25D0)**2 + (yVals(j)-0.25D0)**2 )
       ENDDO !j
       q = 0D0
-      q(:,:,1) = 1D0
       WHERE(r .lt. 1D0)
-          q(:,:,2) = 0.25D0*(1D0+DCOS(PI*r))**2
+          q(:,:,1) = 0.25D0*(1D0+DCOS(PI*r))**2
       END WHERE
+      !q(:,:,2) = 1D0
 !      q(:,:,3) = q(:,:,2)
+    CASE(6) ! Smoother cosbell
+      DO j=1,ny
+          r(:,j) = 4D0*SQRT( (xVals-0.25D0)**2 + (yVals(j)-0.25D0)**2 )
+      ENDDO !j
+      q = 0D0
+      WHERE(r .lt. 1D0)
+          q(:,:,1) = (0.5D0*(1D0+DCOS(PI*r)))**3
+      END WHERE
     CASE(7) ! Slotted cylinder in deformation flow
         x0 = 0.25D0
         y0 = 0.5D0
